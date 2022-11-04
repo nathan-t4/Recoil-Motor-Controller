@@ -9,9 +9,9 @@
 
 
 void Motor_init(Motor *motor) {
-  motor->pole_pairs = 14;
-  motor->kv_rating = 150;
+  motor->pole_pairs = 7;
+  motor->kv_rating = 340;
 
-  motor->flux_angle_offset = 3.5;
+  motor->flux_angle_offset = 2.314;
 }
 

@@ -24,6 +24,8 @@ extern UART_HandleTypeDef huart2;
 MotorController controller;
 
 float user_input_pot;
+float pot_init_pos;
+float motor_init_pos;
 uint8_t user_input_button;
 uint8_t user_output_led;
 
@@ -38,10 +40,12 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
     MotorController_updateCommutation(&controller, &hadc1);
   }
   else if (htim == &htim2) {
+    /* add back later
     if (controller.mode != MODE_IDLE && controller.mode != MODE_CALIBRATION) {
       MotorController_setMode(&controller, MODE_DISABLED);
       controller.error = ERROR_HEARTBEAT_TIMEOUT;
     }
+     */
   }
   else if (htim == &htim4) {
     MotorController_triggerPositionUpdate(&controller);
@@ -53,6 +57,14 @@ void HAL_I2C_MasterRxCpltCallback(I2C_HandleTypeDef *hi2c) {
 
   /* ====== Start user APP code ====== */
 //  controller.position_controller.position_target = APP_getUserPot() * M_PI;
+  if (controller.mode == MODE_POSITION) {
+//	  controller.position_controller.velocity_target = 0;
+	  controller.position_controller.position_target = (APP_getUserPot() - pot_init_pos) * (5 * M_PI) + motor_init_pos;
+  }
+  else if (controller.mode == MODE_VELOCITY) {
+	  controller.position_controller.position_target = 0;
+	  controller.position_controller.velocity_target = APP_getUserPot() * 2 * M_PI;
+  }
 
   /* ====== End user APP code ====== */
 
@@ -86,12 +98,119 @@ void APP_initFlashOption() {
   HAL_FLASH_OB_Launch();  // reload the new settings
 }
 
+void handleHostCommand() {
+  char str[128];
+
+  uint8_t command = 0;
+
+  if (HAL_UART_Receive(&huart2, &command, 1, 1000) != HAL_OK) {
+    return;
+  }
+
+  if (command == '0') {  // idle mode
+    MotorController_setMode(&controller, MODE_IDLE);
+    sprintf(str, "IDLE mode\r\n");
+//    sprintf(str, "test: %f\t mode: %i\t kv: %i\r\n", controller.motor.flux_angle_offset, controller.mode, controller.motor.kv_rating);
+    HAL_UART_Transmit(&huart2, (uint8_t *)str, strlen(str), 1000);
+    return;
+  }
+//  if (command == '1') {  // position mode
+//    sprintf(str, "Start Calibration\r\n");
+//    HAL_UART_Transmit(&huart2, (uint8_t *)str, strlen(str), 1000);
+//
+//    MotorController_setMode(&controller, MODE_CALIBRATION);
+//    sprintf(str, "Calibration Done!\r\n");
+//    HAL_UART_Transmit(&huart2, (uint8_t *)str, strlen(str), 1000);
+//    return;
+//  }
+  if (command == '2') {  // torque mode
+    MotorController_setMode(&controller, MODE_TORQUE);
+    sprintf(str, "TORQUE mode\r\n");
+    HAL_UART_Transmit(&huart2, (uint8_t *)str, strlen(str), 1000);
+    return;
+  }
+  if (command == '3') {  // velocity mode
+    MotorController_setMode(&controller, MODE_VELOCITY);
+    sprintf(str, "VELOCITY mode\r\n");
+    HAL_UART_Transmit(&huart2, (uint8_t *)str, strlen(str), 1000);
+    return;
+  }
+  if (command == '4') {  // position mode
+    MotorController_setMode(&controller, MODE_POSITION);
+
+    // update pot_init_pos to current position
+    MotorController_triggerPositionUpdate(&controller);
+    MotorController_updatePositionReading(&controller);
+    motor_init_pos = controller.position_controller.position_measured;
+    pot_init_pos = APP_getUserPot();
+
+//    sprintf(str, "POSITION mode, init pos: %f,\t current pot: %f \r\n", motor_init_pos, pot_init_pos);
+    sprintf(str, "POSITION mode\r\n");
+    HAL_UART_Transmit(&huart2, (uint8_t *)str, strlen(str), 1000);
+    return;
+  }
+  if (command == 'I') {  // log currents
+    sprintf(str, "%f\t%f\t%f\t%f\t%f\t%f\t%f\r\n",
+        controller.current_controller.i_a_measured,
+		controller.current_controller.i_b_measured,
+		controller.current_controller.i_c_measured,
+        controller.current_controller.i_alpha_measured,
+		controller.current_controller.i_beta_measured,
+		controller.current_controller.i_q_measured,
+		controller.current_controller.i_d_measured);
+    HAL_UART_Transmit(&huart2, (uint8_t *)str, strlen(str), 1000);
+    return;
+  }
+  if (command == 'V') {  // log voltages
+    sprintf(str, "%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\r\n",
+    	controller.current_controller.v_a_setpoint,
+		controller.current_controller.v_b_setpoint,
+		controller.current_controller.v_c_setpoint,
+		controller.current_controller.v_alpha_setpoint,
+		controller.current_controller.v_beta_setpoint,
+		controller.current_controller.v_q_setpoint,
+		controller.current_controller.v_d_setpoint,
+		controller.powerstage.bus_voltage_measured);
+    HAL_UART_Transmit(&huart2, (uint8_t *)str, strlen(str), 1000);
+    return;
+  }
+  if (command == 'p') {  // log position
+    sprintf(str, "%f\t%f\r\n",
+    	controller.position_controller.position_measured,
+		controller.position_controller.position_target
+		);
+    HAL_UART_Transmit(&huart2, (uint8_t *)str, strlen(str), 1000);
+    return;
+  }
+  if (command == 'v') {  // log velocity
+	sprintf(str, "%f\t%f\r\n",
+		controller.position_controller.velocity_measured,
+		controller.position_controller.velocity_target
+		);
+    HAL_UART_Transmit(&huart2, (uint8_t *)str, strlen(str), 1000);
+    return;
+  }
+  if (command == 'G') {  // log torques
+    sprintf(str, "%f\t%f\t%f\t%f\t%f\t%f\r\n",
+        controller.position_controller.position_measured,
+        controller.position_controller.position_setpoint,
+		controller.position_controller.velocity_measured,
+		controller.position_controller.velocity_setpoint,
+		controller.current_controller.i_q_setpoint,
+		controller.position_controller.torque_setpoint
+        );
+    HAL_UART_Transmit(&huart2, (uint8_t *)str, strlen(str), 1000);
+    return;
+  }
+}
+
+
 void APP_init() {
   MotorController_init(&controller);
 
   controller.position_controller.position_kp = 0.3;
-  controller.position_controller.torque_limit_lower = -10;
-  controller.position_controller.torque_limit_upper = 10;
+  controller.position_controller.torque_limit_lower = -5;
+  controller.position_controller.torque_limit_upper = 5;
 
   {
     char str[128];
@@ -149,9 +268,9 @@ void APP_main() {
 //      controller.current_controller.i_a_measured,
 //      controller.current_controller.i_b_measured,
 //      controller.current_controller.i_c_measured);
-    sprintf(str, "vbus:%f\tvel:%f\r\n",
-        controller.powerstage.bus_voltage_measured,
-        controller.encoder.velocity);
+//    sprintf(str, "vbus:%f\tvel:%f\r\n",
+//        controller.powerstage.bus_voltage_measured,
+//        controller.encoder.velocity);
   HAL_UART_Transmit(&huart2, (uint8_t *)str, strlen(str), 1000);
 
   HAL_Delay(10);

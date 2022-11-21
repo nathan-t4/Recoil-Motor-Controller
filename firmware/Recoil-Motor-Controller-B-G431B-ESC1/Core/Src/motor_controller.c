@@ -30,12 +30,6 @@ void MotorController_init(MotorController *controller) {
   controller->device_id = DEVICE_CAN_ID;
   controller->firmware_version = FIRMWARE_VERSION;
 
-  #if OVERWRITE_CONFIG
-    MotorController_storeConfig(controller);
-  #else
-    MotorController_loadConfig(controller);
-  #endif
-
   FDCAN_FilterTypeDef filter_config;
   filter_config.IdType = FDCAN_STANDARD_ID;
   filter_config.FilterIndex = 0;
@@ -80,6 +74,23 @@ void MotorController_init(MotorController *controller) {
 
   HAL_Delay(100);
   PowerStage_calibratePhaseCurrentOffset(&controller->powerstage);
+
+ /*
+	Steps to save config to flash:
+	1. Setup motor (kv, pole pairs), current controller (e.g. kp, ki),
+	   position controller (e.g. kp, ki, kd, pos limits), FIRMWARE_VERSION, DEVICE_CAN_ID,
+	   and set OVERWRITE_CONFIG = 1
+	2. Motor is automatically calibrated and config is saved at runtime.
+	   Can check flash memory with STM32CubeProgrammer to verify.
+	3. Set OVERWRITE_CONFIG = 0 and re-flash firmware.
+*/
+
+	#if OVERWRITE_CONFIG
+  	  MotorController_runCalibrationSequence(controller);
+//	  MotorController_storeConfig(controller);
+	#else
+	  MotorController_loadConfig(controller);
+	#endif
 
   if (controller->mode == MODE_DISABLED) {
     controller->mode = MODE_IDLE;
@@ -425,8 +436,12 @@ void MotorController_runCalibrationSequence(MotorController *controller) {
     sprintf(str, "offset angle: %f\r\n", controller->motor.flux_angle_offset);
     HAL_UART_Transmit(&huart2, (uint8_t *)str, strlen(str), 10);
   }
-
-  MotorController_storeConfig(controller);
+  {
+      char str[128];
+      sprintf(str, "Storing config");
+      HAL_UART_Transmit(&huart2, (uint8_t *)str, strlen(str), 10);
+      MotorController_storeConfig(controller);
+    }
 
   HAL_Delay(1000);
 
@@ -530,9 +545,15 @@ void MotorController_handleCANMessage(MotorController *controller, CAN_Frame *rx
       *((float *)tx_frame.data) = controller->position_controller.position_kd;
       break;
     case CAN_ID_IQ_KP_KI:  // 0x22
-      tx_frame.size = 8;
-      *((float *)tx_frame.data) = controller->current_controller.i_q_kp;
-      *((float *)tx_frame.data + 1) = controller->current_controller.i_q_ki;
+      if (is_get_request) {
+		  tx_frame.size = 8;
+		  *((float *)tx_frame.data) = controller->current_controller.i_q_kp;
+		  *((float *)tx_frame.data + 1) = controller->current_controller.i_q_ki;
+      }
+      else {
+    	  controller->current_controller.i_q_kp = *((float *)rx_frame->data);
+    	  controller->current_controller.i_q_ki = *((float *)rx_frame->data + 1);
+      }
       break;
     case CAN_ID_ID_KP_KI:  // 0x23
       tx_frame.size = 8;

@@ -40,12 +40,10 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
     MotorController_updateCommutation(&controller, &hadc1);
   }
   else if (htim == &htim2) {
-    /* add back later
     if (controller.mode != MODE_IDLE && controller.mode != MODE_CALIBRATION) {
       MotorController_setMode(&controller, MODE_DISABLED);
       controller.error = ERROR_HEARTBEAT_TIMEOUT;
     }
-     */
   }
   else if (htim == &htim4) {
     MotorController_triggerPositionUpdate(&controller);
@@ -57,14 +55,14 @@ void HAL_I2C_MasterRxCpltCallback(I2C_HandleTypeDef *hi2c) {
 
   /* ====== Start user APP code ====== */
 //  controller.position_controller.position_target = APP_getUserPot() * M_PI;
-  if (controller.mode == MODE_POSITION) {
-//	  controller.position_controller.velocity_target = 0;
-	  controller.position_controller.position_target = (APP_getUserPot() - pot_init_pos) * (5 * M_PI) + motor_init_pos;
-  }
-  else if (controller.mode == MODE_VELOCITY) {
-	  controller.position_controller.position_target = 0;
-	  controller.position_controller.velocity_target = APP_getUserPot() * 2 * M_PI;
-  }
+//  if (controller.mode == MODE_POSITION) {
+////	  controller.position_controller.velocity_target = 0;
+//	  controller.position_controller.position_target = (APP_getUserPot() - pot_init_pos) * (5 * M_PI) + motor_init_pos;
+//  }
+//  else if (controller.mode == MODE_VELOCITY) {
+//	  controller.position_controller.position_target = 0;
+//	  controller.position_controller.velocity_target = APP_getUserPot() * 2 * M_PI;
+//  }
 
   /* ====== End user APP code ====== */
 
@@ -110,19 +108,18 @@ void handleHostCommand() {
   if (command == '0') {  // idle mode
     MotorController_setMode(&controller, MODE_IDLE);
     sprintf(str, "IDLE mode\r\n");
-//    sprintf(str, "test: %f\t mode: %i\t kv: %i\r\n", controller.motor.flux_angle_offset, controller.mode, controller.motor.kv_rating);
     HAL_UART_Transmit(&huart2, (uint8_t *)str, strlen(str), 1000);
     return;
   }
-//  if (command == '1') {  // position mode
-//    sprintf(str, "Start Calibration\r\n");
-//    HAL_UART_Transmit(&huart2, (uint8_t *)str, strlen(str), 1000);
-//
-//    MotorController_setMode(&controller, MODE_CALIBRATION);
-//    sprintf(str, "Calibration Done!\r\n");
-//    HAL_UART_Transmit(&huart2, (uint8_t *)str, strlen(str), 1000);
-//    return;
-//  }
+  if (command == '1') {  // position mode
+    sprintf(str, "Start Calibration\r\n");
+    HAL_UART_Transmit(&huart2, (uint8_t *)str, strlen(str), 1000);
+
+    MotorController_setMode(&controller, MODE_CALIBRATION);
+    sprintf(str, "Calibration Done!\r\n");
+    HAL_UART_Transmit(&huart2, (uint8_t *)str, strlen(str), 1000);
+    return;
+  }
   if (command == '2') {  // torque mode
     MotorController_setMode(&controller, MODE_TORQUE);
     sprintf(str, "TORQUE mode\r\n");
@@ -190,7 +187,7 @@ void handleHostCommand() {
     HAL_UART_Transmit(&huart2, (uint8_t *)str, strlen(str), 1000);
     return;
   }
-  if (command == 'G') {  // log torques
+  if (command == 'G') {  // log general
     sprintf(str, "%f\t%f\t%f\t%f\t%f\t%f\r\n",
         controller.position_controller.position_measured,
         controller.position_controller.position_setpoint,
@@ -201,6 +198,16 @@ void handleHostCommand() {
         );
     HAL_UART_Transmit(&huart2, (uint8_t *)str, strlen(str), 1000);
     return;
+  } if (command == 'c') { // config
+	sprintf(str, "flux angle offset: %f\t device id: %d\r\n",
+			controller.motor.flux_angle_offset,
+			DEVICE_CAN_ID);
+	HAL_UART_Transmit(&huart2, (uint8_t *)str, strlen(str), 1000);
+  } if (command == 't') { // torques
+	sprintf(str, "measured: %f\t setpoint: %f\r\n",
+			controller.position_controller.torque_measured,
+			controller.position_controller.torque_setpoint);
+	HAL_UART_Transmit(&huart2, (uint8_t *)str, strlen(str), 1000);
   }
 }
 
@@ -216,6 +223,10 @@ void APP_init() {
     char str[128];
     sprintf(str, "motor pp: %d\r\n", controller.motor.pole_pairs);
     HAL_UART_Transmit(&huart2, (uint8_t *)str, strlen(str), 1000);
+    sprintf(str, "motor offset angle: %f\r\n", controller.motor.flux_angle_offset);
+	HAL_UART_Transmit(&huart2, (uint8_t *)str, strlen(str), 1000);
+	sprintf(str, "device id: %d\r\n", DEVICE_CAN_ID);
+	HAL_UART_Transmit(&huart2, (uint8_t *)str, strlen(str), 1000);
   }
 }
 
@@ -234,7 +245,9 @@ void APP_main() {
 //    MotorController_setMode(&controller, MODE_DISABLED);
   }
 
-  char str[128];
+  handleHostCommand();
+
+//  char str[128];
 //  sprintf(str, "pos:%f\tpos_t:%f\tpos_s:%f\tv:%f\r\n",
 //      controller.position_controller.position_measured,
 //      controller.position_controller.position_target,
@@ -271,7 +284,7 @@ void APP_main() {
 //    sprintf(str, "vbus:%f\tvel:%f\r\n",
 //        controller.powerstage.bus_voltage_measured,
 //        controller.encoder.velocity);
-  HAL_UART_Transmit(&huart2, (uint8_t *)str, strlen(str), 1000);
+//  HAL_UART_Transmit(&huart2, (uint8_t *)str, strlen(str), 1000);
 
   HAL_Delay(10);
 

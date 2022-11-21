@@ -8,11 +8,11 @@
 #ifndef INC_MOTOR_CONTROLLER_CONF_H_
 #define INC_MOTOR_CONTROLLER_CONF_H_
 
-#define FIRMWARE_VERSION                0x00100002    // (MAJOR [7:5]) . (MINOR [4:2]) . (PATCH [1:0])
+#define FIRMWARE_VERSION                0x00100003    // (MAJOR [7:5]) . (MINOR [4:2]) . (PATCH [1:0])
 
 #define DEVICE_CAN_ID                   2
 
-#define OVERWRITE_CONFIG                0
+#define OVERWRITE_CONFIG                1
 
 #define MAX_CALIBRATION_CURRENT         2.5
 

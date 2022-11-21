@@ -4,130 +4,13 @@ import tkinter as tk
 import tkinter.ttk as ttk
 
 import serial
+import math
+import can_protocol
+import motor_can
 
 FPS = 10
 
 display_mode = "GENERAL"
-
-
-class ESCControl:
-    MODE_IDLE           = b"0"
-    MODE_CALIBRATION    = b"1"
-    MODE_TORQUE         = b"2"
-    MODE_VELOCITY       = b"3"
-    MODE_POSITION       = b"4"
-    
-    def __init__(self):
-        self._ser = serial.Serial(port="COM4", baudrate=115200, timeout=1)
-
-        self.phase_current_measured = [0, 0, 0]
-        self.position_measured = 0
-        self.position_setpoint = 0
-        self.bus_voltage_measured = 0
-        self.torque_setpoint = 0
-
-    def commandMode(self, mode):
-        self._ser.write(mode)
-
-    def update(self):
-        self.updateCurrent()
-        self.updateVoltage()
-        self.updatePosition()
-    
-    def updateCurrent(self):
-        self._ser.write(b"I")
-
-        buffer = self._ser.readline()
-            
-        data = buffer.decode().split("\t")
-        try:
-            data = [float(elem) for elem in data]
-        except:
-            return
-        if len(data) != 7:
-            return
-        self.phase_current_measured = data[0:3]
-        self.i_alpha = data[3]
-        self.i_beta = data[4]
-        self.i_q = data[5]
-        self.i_d = data[6]
-        
-    def updateVoltage(self):
-        self._ser.write(b"V")
-        
-        buffer = b""
-
-        buffer = self._ser.readline()
-            
-        data = buffer.decode().split("\t")
-        try:
-            data = [float(elem) for elem in data]
-        except:
-            return
-        if len(data) != 8:
-            return
-        self.phase_voltage_setpoint = data[0:3]
-        self.v_alpha = data[3]
-        self.v_beta = data[4]
-        self.v_q = data[5]
-        self.v_d = data[6]
-        self.bus_voltage_measured = data[7]
-    
-    def updatePosition(self):
-        self._ser.write(b"p")
-        
-        buffer = b""
-
-        buffer = self._ser.readline()
-            
-        data = buffer.decode().split("\t")
-        try:
-            data = [float(elem) for elem in data]
-        except:
-            return
-        if len(data) != 2:
-            return
-        self.position_measured = data[0]
-        self.position_setpoint = data[1]
-        
-    def updateVelocity(self):
-        self._ser.write(b"v")
-        
-        buffer = b""
-
-        buffer = self._ser.readline()
-            
-        data = buffer.decode().split("\t")
-        try:
-            data = [float(elem) for elem in data]
-        except:
-            return
-        if len(data) != 2:
-            return
-        self.velocity_measured = data[0]
-        self.velocity_setpoint = data[1]
-        
-    def updateGeneral(self):
-        self._ser.write(b"G")
-        
-        buffer = b""
-
-        buffer = self._ser.readline()
-            
-        data = buffer.decode().split("\t")
-        try:
-            data = [float(elem) for elem in data]
-        except:
-            return
-        if len(data) != 6:
-            return
-        self.position_measured = data[0]
-        self.position_setpoint = data[1]
-        self.velocity_measured = data[2]
-        self.velocity_setpoint = data[3]
-        self.i_q = data[4]
-        self.torque_setpoint = data[5]
-
 
 
 class Plot(ttk.Frame):
@@ -184,7 +67,7 @@ class Plot(ttk.Frame):
             
         self.parent.after(int(1000/FPS), self.update)
 
-esc = ESCControl()
+esc = motor_can.ESCControl()
 
 
 root = tk.Tk()
@@ -211,52 +94,55 @@ button_position_style = ttk.Style()
 button_position_style.configure("Position.TButton", foreground="#666666")
 
 def setMode(mode):
-    if mode == ESCControl.MODE_IDLE:
+    if mode == can_protocol.RecoilMotorController.MODE_IDLE:
         button_idle_style.configure("Idle.TButton", foreground="#000000")
         button_calibrate_style.configure("Calibrate.TButton", foreground="#666666")
         button_torque_style.configure("Torque.TButton", foreground="#666666")
         button_velocity_style.configure("Velocity.TButton", foreground="#666666")
         button_position_style.configure("Position.TButton", foreground="#666666")
-        esc.commandMode(ESCControl.MODE_IDLE)
-    elif mode == ESCControl.MODE_CALIBRATION:
+
+        esc.commandMode(can_protocol.RecoilMotorController.MODE_IDLE)
+
+    elif mode == can_protocol.RecoilMotorController.MODE_CALIBRATION:
         button_idle_style.configure("Idle.TButton", foreground="#666666")
         button_calibrate_style.configure("Calibrate.TButton", foreground="#000000")
         button_torque_style.configure("Torque.TButton", foreground="#666666")
         button_velocity_style.configure("Velocity.TButton", foreground="#666666")
         button_position_style.configure("Position.TButton", foreground="#666666")
-        esc.commandMode(ESCControl.MODE_CALIBRATION)
-    elif mode == ESCControl.MODE_TORQUE:
+        esc.commandMode(can_protocol.RecoilMotorController.MODE_CALIBRATION)
+    elif mode == can_protocol.RecoilMotorController.MODE_TORQUE:
         button_idle_style.configure("Idle.TButton", foreground="#666666")
         button_calibrate_style.configure("Calibrate.TButton", foreground="#666666")
         button_torque_style.configure("Torque.TButton", foreground="#000000")
         button_velocity_style.configure("Velocity.TButton", foreground="#666666")
         button_position_style.configure("Position.TButton", foreground="#666666")
-        esc.commandMode(ESCControl.MODE_TORQUE)
-    elif mode == ESCControl.MODE_VELOCITY:
+        esc.commandMode(can_protocol.RecoilMotorController.MODE_TORQUE)
+    elif mode == can_protocol.RecoilMotorController.MODE_VELOCITY:
         button_idle_style.configure("Idle.TButton", foreground="#666666")
         button_calibrate_style.configure("Calibrate.TButton", foreground="#666666")
         button_torque_style.configure("Torque.TButton", foreground="#666666")
         button_velocity_style.configure("Velocity.TButton", foreground="#000000")
         button_position_style.configure("Position.TButton", foreground="#666666")
-        esc.commandMode(ESCControl.MODE_VELOCITY)
-    elif mode == ESCControl.MODE_POSITION:
+        esc.commandMode(can_protocol.RecoilMotorController.MODE_VELOCITY)
+    elif mode == can_protocol.RecoilMotorController.MODE_POSITION:
         button_idle_style.configure("Idle.TButton", foreground="#666666")
         button_calibrate_style.configure("Calibrate.TButton", foreground="#666666")
         button_torque_style.configure("Torque.TButton", foreground="#666666")
         button_velocity_style.configure("Velocity.TButton", foreground="#666666")
         button_position_style.configure("Position.TButton", foreground="#000000")
-        esc.commandMode(ESCControl.MODE_POSITION)
+        esc.commandMode(can_protocol.RecoilMotorController.MODE_POSITION)
 
-button_idle = ttk.Button(section_control, text="IDLE Mode", style="Idle.TButton", command=lambda: setMode(ESCControl.MODE_IDLE))
-button_calibrate = ttk.Button(section_control, text="CALIBRATE Mode", style="Calibrate.TButton", command=lambda: setMode(ESCControl.MODE_CALIBRATION))
-button_torque = ttk.Button(section_control, text="TORQUE Mode", style="Torque.TButton", command=lambda: setMode(ESCControl.MODE_TORQUE))
-button_velocity = ttk.Button(section_control, text="VELOCITY Mode", style="Velocity.TButton", command=lambda: setMode(ESCControl.MODE_VELOCITY))
-button_position = ttk.Button(section_control, text="POSITION Mode", style="Position.TButton", command=lambda: setMode(ESCControl.MODE_POSITION))
+button_idle = ttk.Button(section_control, text="IDLE Mode", style="Idle.TButton", command=lambda: setMode(can_protocol.RecoilMotorController.MODE_IDLE))
+button_calibrate = ttk.Button(section_control, text="CALIBRATE Mode", style="Calibrate.TButton", command=lambda: setMode(can_protocol.RecoilMotorController.MODE_CALIBRATION))
+button_torque = ttk.Button(section_control, text="TORQUE Mode", style="Torque.TButton", command=lambda: setMode(can_protocol.RecoilMotorController.MODE_TORQUE))
+button_velocity = ttk.Button(section_control, text="VELOCITY Mode", style="Velocity.TButton", command=lambda: setMode(can_protocol.RecoilMotorController.MODE_VELOCITY))
+button_position = ttk.Button(section_control, text="POSITION Mode", style="Position.TButton", command=lambda: setMode(can_protocol.RecoilMotorController.MODE_POSITION))
 button_idle.grid(column=0, row=0, sticky=(tk.W, tk.E))
 button_calibrate.grid(column=0, row=1, sticky=(tk.W, tk.E))
 button_torque.grid(column=0, row=2, sticky=(tk.W, tk.E))
 button_velocity.grid(column=0, row=3, sticky=(tk.W, tk.E))
 button_position.grid(column=0, row=4, sticky=(tk.W, tk.E))
+
 
 panel_selection = ttk.Frame(section_plot)
 panel_selection.grid(column=0, row=0, sticky=(tk.W))
@@ -294,8 +180,7 @@ def showVoltagePlot():
     panel_current.grid_forget()
     panel_voltage.grid(column=0, row=1)
     display_mode = "VOLTAGE"
-    
-    
+
 button_show_general = ttk.Button(panel_selection, text="General", command=showGeneralPlot)
 button_show_general.grid(column=0, row=0)
 button_show_current = ttk.Button(panel_selection, text="Current", command=showCurrentPlot)
@@ -303,7 +188,14 @@ button_show_current.grid(column=1, row=0)
 button_show_voltage = ttk.Button(panel_selection, text="Voltage", command=showVoltagePlot)
 button_show_voltage.grid(column=2, row=0)
 
-
+button_step_target = ttk.Button(panel_selection, text="Step", command=lambda:esc.setTargetPositionFcn("Step"))
+button_step_target.grid(column=0, row=1)
+button_sin2w_target = ttk.Button(panel_selection, text="sin(2w)", command=lambda:esc.setTargetPositionFcn("sin2w"))
+button_sin2w_target.grid(column=1, row=1)
+button_sin4w_target = ttk.Button(panel_selection, text="sin(4w)", command=lambda:esc.setTargetPositionFcn("sin4w"))
+button_sin4w_target.grid(column=2, row=1)
+button_sin8w_target = ttk.Button(panel_selection, text="sin(8w)", command=lambda:esc.setTargetPositionFcn("sin8w"))
+button_sin8w_target.grid(column=3, row=1)
 
 plot_position = Plot(panel_general,
             traces=[
@@ -369,18 +261,18 @@ plot_alphabeta_current = Plot(panel_current,
             name="α β Current",
             y_pkpk=[-1, 1])
 plot_alphabeta_current.grid(column=0, row=1)
-plot_qd_current = Plot(panel_current,
+plot_q_current = Plot(panel_current,
             traces=[
                 {
-                    "name": "i_q",
+                    "name": "i_q_measured",
                     "color": "#FFFF00",
                 }, {
-                    "name": "i_d",
+                    "name": "i_q_target",
                     "color": "#00FFFF",
                 }],
-            name="Q D Current",
-            y_pkpk=[-1, 1])
-plot_qd_current.grid(column=0, row=2)
+            name="Q-Axis Current",
+            y_pkpk=[-5, 5])
+plot_q_current.grid(column=0, row=2)
 
 plot_bus_voltage = Plot(panel_voltage,
             traces=[
@@ -412,49 +304,57 @@ plot_phase_voltage.grid(column=0, row=1)
 
 def receivePacket():
     global display_mode
-    
+
+    esc.motor.ping()
+    esc.motor.getMode()
+    esc.setTargetPosition()
+    # print(esc.motor.params.position_measured, esc.motor.params.position_target)
+
     if display_mode == "GENERAL":
-        esc.updateGeneral()
+        esc.updatePosition()
+        esc.updateVelocity()
+        esc.updateTorque()
         plot_position.updateData({
-            "position_measured": esc.position_measured,
-            "position_setpoint": esc.position_setpoint,
+            "position_measured": esc.motor.params.position_measured,
+            "position_setpoint": esc.motor.params.position_target,
             })
         plot_velocity.updateData({
-            "velocity_measured": esc.velocity_measured,
-            "velocity_setpoint": esc.velocity_setpoint,
+            "velocity_measured": esc.motor.params.velocity_measured,
             })
         plot_torque.updateData({
-            "torque_measured": esc.i_q,
-            "torque_setpoint": esc.torque_setpoint,
+            "torque_measured": esc.motor.params.torque_measured,
+            "torque_setpoint": esc.motor.params.torque_target,
             })
     
     elif display_mode == "CURRENT":
         esc.updateCurrent()
+        print(esc.motor.params.iq_measured, esc.motor.params.iq_target)
         plot_phase_current.updateData({
-            "i_a": esc.phase_current_measured[0],
-            "i_b": esc.phase_current_measured[1],
-            "i_c": esc.phase_current_measured[2]
+            "i_a": 0,
+            "i_b": 0,
+            "i_c": 0
             })
         plot_alphabeta_current.updateData({
-            "i_alpha": esc.i_alpha,
-            "i_beta": esc.i_beta
+            "i_alpha": 0,
+            "i_beta": 0
             })
-        plot_qd_current.updateData({
-            "i_q": esc.i_q,
-            "i_d": esc.i_d
+        plot_q_current.updateData({
+            "i_q_target": esc.motor.params.iq_target,
+            "i_q_measured": esc.motor.params.iq_measured
             })
     
     elif display_mode == "VOLTAGE":
         esc.updateVoltage()
         plot_bus_voltage.updateData({
-            "v_bus": esc.bus_voltage_measured
+            "v_bus": esc.motor.params.v_bus
             })
         plot_phase_voltage.updateData({
-            "v_a": esc.phase_voltage_setpoint[0],
-            "v_b": esc.phase_voltage_setpoint[1],
-            "v_c": esc.phase_voltage_setpoint[2]
+            "v_a": 0,
+            "v_b": 0,
+            "v_c": 0
             })
-    
+
+    esc.motor.feed()
     root.after(1, receivePacket)
 
 root.after(1, receivePacket)
@@ -465,7 +365,7 @@ plot_torque.update()
                      
 plot_phase_current.update()
 plot_alphabeta_current.update()
-plot_qd_current.update()
+plot_q_current.update()
 
 plot_bus_voltage.update()
 plot_phase_voltage.update()

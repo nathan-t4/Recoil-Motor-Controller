@@ -12,7 +12,7 @@ transport = recoil.SocketCANTransport()
 
 controller1 = recoil.MotorController(transport=transport, device_id=1)
 controller2 = recoil.MotorController(transport=transport, device_id=2)
-controller3 = recoil.MotorController(transport=transport, device_id=3)
+controller3 = recoil.MotorController(transport=transport, device_id=4)
 
 transport.enable()
 
@@ -40,12 +40,15 @@ controller3.setMode(recoil.MotorController.MODE_POSITION)
 
 try:
     while True:
-        # controller.getMode(lambda controller, frame: print("mode:", frame.data))
-        controller1.getPositionMeasured(lambda controller, position: print("position:", position))
+        controller3.getMode(lambda controller, frame: print("mode:", frame.data))
         
-        controller1.setPositionTarget(8*math.sin(10*time.time()))
-        controller2.setPositionTarget(-2)
-        controller3.setPositionTarget(0)
+        # controller1.getPositionMeasured(lambda controller, position: print("position:", position))
+        
+        # controller3.getPositionMeasured(lambda controller, position: print("position:", position))
+        # controller1.setPositionTarget(8*math.sin(10*time.time()))
+        # controller2.setPositionTarget(-2)
+        # controller3.setPositionTarget(0)
+
         #controller1.setPositionTarget(10*math.sin(2*time.time()))
         #controller2.setPositionTarget(10*(math.sin(time.time())-2))
         #controller3.setPositionTarget(20*math.sin(time.time()))

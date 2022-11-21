@@ -30,7 +30,7 @@ class CANFrame:
         return self.frame_type == CANFrame.CAN_FRAME_REMOTE
 
 class SocketCANTransport:
-    def __init__(self, port="can0", baudrate=1000000):
+    def __init__(self, port="COM9", baudrate=1000000):
         self.port = port
         self.baudrate = baudrate
         self.interface = None
@@ -39,12 +39,13 @@ class SocketCANTransport:
 
     def disable(self):
         self.killed = True
-        os.system("sudo ifconfig {port} down".format(port=self.port))
+        # os.system("sudo ifconfig {port} down".format(port=self.port))
 
     def enable(self):
-        os.system("sudo ip link set {port} type can bitrate {baudrate}".format(port=self.port, baudrate=self.baudrate))
-        os.system("sudo ifconfig {port} up".format(port=self.port))
-        self.interface = can.interface.Bus(channel=self.port, bustype="socketcan")
+        # os.system("sudo ip link set {port} type can bitrate {baudrate}".format(port=self.port, baudrate=self.baudrate))
+        # os.system("sudo ifconfig {port} up".format(port=self.port))
+        # self.interface = can.interface.Bus(channel=self.port, bustype="socketcan")
+        self.interface = can.interface.Bus(channel=self.port, bustype="serial", baudrate=self.baudrate)
         self.killed = False
         self.rx_handler_thread = threading.Thread(target=self.handleRX)
         self.rx_handler_thread.start()

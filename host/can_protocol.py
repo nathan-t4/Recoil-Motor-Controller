@@ -4,6 +4,8 @@ import math
 import threading
 
 import serial
+
+import motor
 # from dotxboxcontroller import XboxController, Hand
 
 # device_id 4 bits
@@ -15,7 +17,6 @@ class Handler:
         self.device = device
         self.callback = callback
     
-
 debug = 0
 
 class CANFrame:
@@ -35,7 +36,7 @@ class CANFrame:
         self.data = data
 
 class SerialTransport:
-    def __init__(self, port="COM9", baudrate=1000000): # 115200
+    def __init__(self, port="COM9", baudrate=1000000):
         self.port = port
         self._ser = serial.Serial(port=self.port, baudrate=baudrate, timeout=None)
         self.handlers = []
@@ -133,15 +134,10 @@ class RecoilMotorController:
     
     def __init__(self, transport, device_id):
         self.transport = transport
-        self.device_id = device_id
-
-        self.motor_position_measured = 0
-        self.motor_velocity_measured = 0
-
-        self.motor_position_target = 0
+        self.device_id = device_id 
+        self.params = motor.MotorParams()
 
         self.mode = self.MODE_DISABLED
-        self.error = -1
 
     def getMode(self, callback=None):
         frame = CANFrame(self.device_id, self.CAN_ID_MODE, 0)
@@ -169,19 +165,61 @@ class RecoilMotorController:
         
     def getIQ(self):
         frame = CANFrame(self.device_id, self.CAN_ID_CURRENTCONTROLLER_IQ, 0)
-        self.transport.transmitCANFrame(frame)
-        
-        frame = self.transport.receiveCANFrame()
-        if not frame:
-            print("timeout")
-            return None
-        i_q_target, i_q_measured = struct.unpack("<ff", frame.data)
-        return i_q_target, i_q_measured 
+        self.transport.transmitReceiveCANFrame(Handler(frame, self))
 
-    def setIQParams(self, kp, ki):
-        # frame = CANFrame(self.device_id, self.CAN_ID_IQ_KP_KI, 8, struct.pack("<ff", kp, ki))
-        # self.transport(transmitCANFrame(Frame))
+    def getID(self):
+        frame = CANFrame(self.device_id, self.CAN_ID_CURRENTCONTROLLER_ID, 0)
+        self.transport.transmitReceiveCANFrame(Handler(frame, self))
+    
+    def getPhaseCurrents(self):
         pass
+
+    def getIab(self):
+        pass
+    
+    def getVQ(self):
+        frame = CANFrame(self.device_id, self.CAN_ID_CURRENTCONTROLLER_VQ, 0)
+        self.transport.transmitReceiveCANFrame(Handler(frame, self))
+
+    def getVD(self):
+        frame = CANFrame(self.device_id, self.CAN_ID_CURRENTCONTROLLER_VD, 0)
+        self.transport.transmitReceiveCANFrame(Handler(frame, self))
+
+    def getVbus(self):
+        frame = CANFrame(self.device_id, self.CAN_ID_BUS_VOLTAGE, 0)
+        self.transport.transmitReceiveCANFrame(Handler(frame, self))
+
+    def getCurrentParams(self):
+        frame = CANFrame(self.device_id, self.CAN_ID_IQ_KP_KI, 0)
+        self.transport.transmitReceiveCANFrame(Handler(frame, self))
+    
+    def setCurrentParams(self, kp, ki):
+        frame = CANFrame(self.device_id, self.CAN_ID_IQ_KP_KI, 8, struct.pack("<ff", kp, ki))
+        self.transport.transmitCANFrame(frame)
+    
+    def getPositionParams(self):
+        frame = CANFrame(self.device_id, self.CAN_ID_POSITION_KP_KI, 0)
+        self.transport.transmitReceiveCANFrame(Handler(frame, self))
+        frame = CANFrame(self.device_id, self.CAN_ID_POSITION_KD, 0)
+        self.transport.transmitReceiveCANFrame(Handler(frame, self)) 
+
+    def setPositionParams(self, kp=1, ki=0, kd=0):
+        frame = CANFrame(self.device_id, self.CAN_ID_POSITION_KP_KI, 8, struct.pack("<ff", kp, ki))
+        self.transport.trasnmitCANFrame(frame)
+        frame = CANFrame(self.device_id, self.CAN_ID_POSITION_KD, 4, struct.pack("<f", kd))
+        self.transport.transmitCANFrame(frame)
+    
+    def getTorque(self):
+        frame = CANFrame(self.device_id, self.CAN_ID_TORQUE_MEASURED, 0)
+        self.transport.transmitReceiveCANFrame(Handler(frame, self))
+    
+    def getTargetTorque(self):
+        frame = CANFrame(self.device_id, self.CAN_ID_TORQUE_TARGET, 0)
+        self.transport.transmitReceiveCANFrame(Handler(frame, self))
+
+    def getMotorSpecs(self):
+        frame = CANFrame(self.device_id, self.CAN_ID_MOTOR_SPEC, 0)
+        self.transport.transmitReceiveCANFrame(Handler(frame, self))
 
     def feed(self):
         frame = CANFrame(self.device_id, self.CAN_ID_HEARTBEAT, 1, b"0")
@@ -198,21 +236,70 @@ class RecoilMotorController:
         
         if frame.func_id == self.CAN_ID_POSITION_MEASURED:
             position_measured, = struct.unpack("<f", frame.data[0:4])
-            self.motor_position_measured = position_measured
+            self.params.position_measured = position_measured
 
         if frame.func_id == self.CAN_ID_POSITION_TARGET:
             position_target, = struct.unpack("<f", frame.data[0:4])
-            self.motor_position_target = position_target
-            
+            self.params.position_target = position_target
 
         if frame.func_id == self.CAN_ID_VELOCITY_MEASURED:
             velocity_measured, = struct.unpack("<f", frame.data[0:4])
-            self.motor_velocity_measured = velocity_measured    
+            # print(velocity_measured)
+            self.params.velocity_measured = velocity_measured    
+
+        if frame.func_id == self.CAN_ID_TORQUE_MEASURED:
+            torque_measured, = struct.unpack("<f", frame.data[0:4])
+            self.params.torque_measured = torque_measured
+        
+        if frame.func_id == self.CAN_ID_TORQUE_TARGET:
+            torque_target, = struct.unpack("<f", frame.data[0:4])
+            self.params.torque_target = torque_target
+
+        if frame.func_id == self.CAN_ID_CURRENTCONTROLLER_IQ:
+            iq_target, iq_measured = struct.unpack("<ff", frame.data)
+            self.params.iq_target = iq_target
+            self.params.iq_measured = iq_measured
+
+        if frame.func_id == self.CAN_ID_CURRENTCONTROLLER_ID:
+            id_target, id_measured = struct.unpack("<ff", frame.data)
+            self.params.id_target = id_target
+            self.params.id_measured = id_measured
+
+        if frame.func_id == self.CAN_ID_CURRENTCONTROLLER_VQ:
+            vq_target, = struct.unpack("<f", frame.data[0:4])
+            self.params.vq_target = vq_target
+
+        if frame.func_id == self.CAN_ID_CURRENTCONTROLLER_VD:
+            vd_target, = struct.unpack("<f", frame.data[0:4])
+            self.params.vd_target = vd_target
+
+        if frame.func_id == self.CAN_ID_BUS_VOLTAGE:
+            v_bus, = struct.unpack("<f", frame.data[0:4])
+            self.params.v_bus = v_bus
+
+        if frame.func_id == self.CAN_ID_IQ_KP_KI:
+            kp, ki = struct.unpack("<ff", frame.data)
+            self.params.current_kp = kp
+            self.params.current_ki = ki
+
+        if frame.func_id == self.CAN_ID_POSITION_KP_KI:
+            kp, ki = struct.unpack("<ff", frame.data)
+            self.params.position_kp = kp
+            self.params.position_ki = ki
+
+        if frame.func_id == self.CAN_ID_POSITION_KD:
+            kd, = struct.unpack("<f", frame.data[0:4])
+            self.params.position_kd = kd
+
+        if frame.func_id == self.CAN_ID_MOTOR_SPEC:
+            ppairs, kv = struct.unpack("<II", frame.data)
+            self.params.pole_pairs = ppairs
+            self.params.kv = kv
 
         if frame.func_id == self.CAN_ID_PING:
-            print(self.device_id, frame.data[0])
+            # print(self.device_id, frame.data[0])
+            pass
             
-
 # stick = XboxController(0)
 
 
@@ -227,33 +314,19 @@ def main():
     ser = SerialTransport("COM9", baudrate=1000000)
 
     motor_0 = RecoilMotorController(transport=ser, device_id=1)
-    motor_1 = RecoilMotorController(transport=ser, device_id=3)
-
+    # motor_1 = RecoilMotorController(transport=ser, device_id=3)
+    print("ser start")
     ser.start()
-
+    print("setMode to idle")
     motor_0.setMode(RecoilMotorController.MODE_IDLE)
-    motor_1.setMode(RecoilMotorController.MODE_IDLE)
+    # motor_1.setMode(RecoilMotorController.MODE_IDLE)
 
     time.sleep(0.5)
 
-    motor_0.setMode(RecoilMotorController.MODE_POSITION)
-    motor_1.setMode(RecoilMotorController.MODE_POSITION)
+    # motor_0.setMode(RecoilMotorController.MODE_POSITION)
+    # motor_1.setMode(RecoilMotorController.MODE_POSITION)
     # motor_0.ping()
     # motor_1.ping()
-
-    # while motor_0.mode != RecoilMotorController.MODE_POSITION and motor_1.mode != RecoilMotorController.MODE_POSITION:
-    #     motor_0.setMode(RecoilMotorController.MODE_POSITION)
-    #     time.sleep(0.1)
-    #     motor_1.setMode(RecoilMotorController.MODE_POSITION)
-    #     time.sleep(0.1)
-    #     print(motor_0.mode, motor_1.mode)
-
-    # while motor_1.mode != RecoilMotorController.MODE_POSITION:
-    #     motor_0.getMode()
-    #     motor_1.getMode()
-    #     motor_0.setMode(RecoilMotorController.MODE_IDLE)
-    #     motor_1.setMode(RecoilMotorController.MODE_POSITION)
-    #     print(motor_0.mode, motor_1.mode)
 
     while True:
         # stick.update()
@@ -261,8 +334,8 @@ def main():
         t = time.time()
 
         
-        motor_0.getMode()
-        motor_1.getMode()
+        # motor_0.getMode()
+        # motor_1.getMode()
         
         
         # val0 = 0
@@ -272,24 +345,32 @@ def main():
         
 
         
-        motor_0.getPosition()
-        motor_1.getPosition()
-        motor_0.getTargetPosition()
-        motor_1.getTargetPosition()
+        # motor_0.getPosition()
+        # motor_1.getPosition()
+        # motor_0.getTargetPosition()
+        # motor_1.getTargetPosition()
         # motor_0.setTargetPosition(4*math.sin(2*time.time()))
         # motor_1.setTargetPosition(2*math.sin(time.time()))
-        motor_0.setTargetPosition(0)
-        motor_1.setTargetPosition(0)
-        
-        print(motor_0.mode, motor_1.mode,
-              motor_0.motor_position_target, motor_1.motor_position_target,
-              motor_0.motor_position_measured, motor_1.motor_position_measured)
+        # motor_0.setTargetPosition(0)
+        # motor_1.setTargetPosition(0)
+        # print("GetIQ")
+        # motor_0.getIQ()
+
+        motor_0.getMotorSpecs()
+        motor_0.getCurrentParams()
+        motor_0.getPositionParams()
+        # print(motor_0.mode, motor_1.mode,
+        #       motor_0.motor_position_target, motor_1.motor_position_target,
+        #       motor_0.motor_position_measured, motor_1.motor_position_measured)
         # print(motor_0.motor.velocity_measured, motor_1.motor.velocity_measured)
         # print(motor_0.mode, motor_0.motor_position_measured, motor_0.motor_position_target)
         # print(motor_0.motor_position_measured, motor_1.motor_position_measured)
-
+        # print(motor_0.motor_iq_measured, motor_0.motor_iq_target, motor_0.motor_position_measured)
+        # print(motor_0.motor_pole_pairs, motor_0.motor_kv)
+        # print(motor_0.motor.current_kp, motor_0.motor.current_ki)
+        print(motor_0.motor.position_kp, motor_0.motor.position_ki, motor_0.motor.position_kd)
         motor_0.feed()
-        motor_1.feed()
+        # motor_1.feed()
 
         time.sleep(0.01)
         

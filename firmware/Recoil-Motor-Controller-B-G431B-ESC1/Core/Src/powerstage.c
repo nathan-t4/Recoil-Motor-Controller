@@ -20,7 +20,9 @@ void PowerStage_init(PowerStage *powerstage, TIM_HandleTypeDef *htim, ADC_Handle
   powerstage->bus_voltage_measured = 12.;
 
   PowerStage_disable(powerstage);
+}
 
+void PowerStage_start(PowerStage *powerstage) {
   HAL_TIM_Base_Start_IT(powerstage->htim);
   HAL_TIM_PWM_Start(powerstage->htim, TIM_CHANNEL_1);
   HAL_TIMEx_PWMN_Start(powerstage->htim, TIM_CHANNEL_1);

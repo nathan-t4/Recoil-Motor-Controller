@@ -10,9 +10,10 @@
 
 #define FIRMWARE_VERSION                0x00100003    // (MAJOR [7:5]) . (MINOR [4:2]) . (PATCH [1:0])
 
-#define DEVICE_CAN_ID                   2
+#define DEVICE_CAN_ID                   4
 
-#define OVERWRITE_CONFIG                1
+#define OVERWRITE_CONFIG                0
+
 
 #define MAX_CALIBRATION_CURRENT         2.5
 
@@ -41,12 +42,13 @@ typedef enum {
   CAN_ID_VELOCITY_TARGET    = 0x23U,
   CAN_ID_POSITION_MEASURED  = 0x24U,
   CAN_ID_POSITION_TARGET    = 0x25U,
-  CAN_ID_POSITION_KP_KI     = 0x26U,
-  CAN_ID_POSITION_KD        = 0x27U,
+  CAN_ID_POSITION_KP_KD     = 0x26U,
+  CAN_ID_POSITION_KI        = 0x27U,
   CAN_ID_IQ_KP_KI           = 0x28U,
   CAN_ID_ID_KP_KI           = 0x29U,
 
   CAN_ID_BUS_VOLTAGE        = 0x30U,
+  CAN_ID_TORQUE_LIMIT       = 0x31U,
 
   CAN_ID_MOTOR_SPEC         = 0x40U,
   CAN_ID_MOTOR_FLUX_OFFSET  = 0x41U,

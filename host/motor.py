@@ -23,6 +23,8 @@ class MotorParams():
         self.current_ki = 0
 
         self.v_bus = 0
+        self.torque_limit_lower = 0
+        self.torque_limit_upper = 0
 
         self.pole_pairs = 0
         self.kv = 0

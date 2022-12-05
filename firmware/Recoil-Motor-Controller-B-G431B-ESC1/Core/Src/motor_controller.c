@@ -53,6 +53,25 @@ void MotorController_init(MotorController *controller) {
   CurrentController_init(&controller->current_controller);
   PositionController_init(&controller->position_controller);
 
+
+  /*
+ 	Steps to save config to flash:
+ 	1. Setup motor (kv, pole pairs), current controller (e.g. kp, ki),
+ 	   position controller (e.g. kp, ki, kd, pos limits), FIRMWARE_VERSION, DEVICE_CAN_ID,
+ 	   and set OVERWRITE_CONFIG = 1
+ 	2. Flash firmware and calibrate motor using button or serial ctrl (1).
+ 	   Can check flash memory with STM32CubeProgrammer to verify.
+ 	3. Set OVERWRITE_CONFIG = 0 and re-flash firmware.
+ */
+
+  #if OVERWRITE_CONFIG
+	MotorController_storeConfig(controller);
+  #else
+	MotorController_loadConfig(controller);
+  #endif
+
+  PowerStage_start(&controller->powerstage);
+
   status |= HAL_OPAMP_Start(&hopamp1);
   status |= HAL_OPAMP_Start(&hopamp2);
   status |= HAL_OPAMP_Start(&hopamp3);
@@ -74,23 +93,6 @@ void MotorController_init(MotorController *controller) {
 
   HAL_Delay(100);
   PowerStage_calibratePhaseCurrentOffset(&controller->powerstage);
-
- /*
-	Steps to save config to flash:
-	1. Setup motor (kv, pole pairs), current controller (e.g. kp, ki),
-	   position controller (e.g. kp, ki, kd, pos limits), FIRMWARE_VERSION, DEVICE_CAN_ID,
-	   and set OVERWRITE_CONFIG = 1
-	2. Motor is automatically calibrated and config is saved at runtime.
-	   Can check flash memory with STM32CubeProgrammer to verify.
-	3. Set OVERWRITE_CONFIG = 0 and re-flash firmware.
-*/
-
-	#if OVERWRITE_CONFIG
-  	  MotorController_runCalibrationSequence(controller);
-//	  MotorController_storeConfig(controller);
-	#else
-	  MotorController_loadConfig(controller);
-	#endif
 
   if (controller->mode == MODE_DISABLED) {
     controller->mode = MODE_IDLE;
@@ -436,12 +438,6 @@ void MotorController_runCalibrationSequence(MotorController *controller) {
     sprintf(str, "offset angle: %f\r\n", controller->motor.flux_angle_offset);
     HAL_UART_Transmit(&huart2, (uint8_t *)str, strlen(str), 10);
   }
-  {
-      char str[128];
-      sprintf(str, "Storing config");
-      HAL_UART_Transmit(&huart2, (uint8_t *)str, strlen(str), 10);
-      MotorController_storeConfig(controller);
-    }
 
   HAL_Delay(1000);
 
@@ -517,6 +513,17 @@ void MotorController_handleCANMessage(MotorController *controller, CAN_Frame *rx
         controller->position_controller.torque_target = *((float *)rx_frame->data);
       }
       break;
+    case CAN_ID_TORQUE_LIMIT:
+    	if (is_get_request) {
+    		tx_frame.size = 8;
+    		*((float *)tx_frame.data) = controller->position_controller.torque_limit_lower;
+    		*((float *)tx_frame.data + 1) = controller->position_controller.torque_limit_upper;
+    	}
+    	else {
+    		controller->position_controller.torque_limit_lower = *((float *)rx_frame->data);
+    		controller->position_controller.torque_limit_upper = *((float *)rx_frame->data + 1);
+    	}
+    	break;
     case CAN_ID_POSITION_MEASURED:  // 0x11
       tx_frame.size = 4;
       *((float *)tx_frame.data) = MotorController_getPosition(controller);
@@ -535,14 +542,25 @@ void MotorController_handleCANMessage(MotorController *controller, CAN_Frame *rx
       *((float *)tx_frame.data) = MotorController_getVelocity(controller);
       break;
 
-    case CAN_ID_POSITION_KP_KI:  // 0x20
-      tx_frame.size = 8;
-      *((float *)tx_frame.data) = controller->position_controller.position_kp;
-      *((float *)tx_frame.data + 1) = controller->position_controller.position_ki;
+    case CAN_ID_POSITION_KP_KD:  // 0x20
+      if (is_get_request) {
+		 tx_frame.size = 8;
+		 *((float *)tx_frame.data) = controller->position_controller.position_kp;
+		 *((float *)tx_frame.data + 1) = controller->position_controller.position_kd;
+      }
+      else {
+    	  controller->position_controller.position_kp = *((float *)rx_frame->data);
+    	  controller->position_controller.position_kd = *((float *)rx_frame->data + 1);
+      }
       break;
-    case CAN_ID_POSITION_KD:  // 0x21
-      tx_frame.size = 4;
-      *((float *)tx_frame.data) = controller->position_controller.position_kd;
+    case CAN_ID_POSITION_KI:  // 0x21
+      if (is_get_request) {
+    	  tx_frame.size = 4;
+    	  *((float *)tx_frame.data) = controller->position_controller.position_ki;
+      }
+      else {
+    	  controller->position_controller.position_ki = *((float *)rx_frame->data);
+      }
       break;
     case CAN_ID_IQ_KP_KI:  // 0x22
       if (is_get_request) {

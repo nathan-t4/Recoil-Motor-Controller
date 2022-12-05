@@ -100,12 +100,13 @@ class RecoilMotorController:
     CAN_ID_VELOCITY_TARGET    = 0x23
     CAN_ID_POSITION_MEASURED  = 0x24
     CAN_ID_POSITION_TARGET    = 0x25
-    CAN_ID_POSITION_KP_KI     = 0x26
-    CAN_ID_POSITION_KD        = 0x27
+    CAN_ID_POSITION_KP_KD     = 0x26
+    CAN_ID_POSITION_KI        = 0x27
     CAN_ID_IQ_KP_KI           = 0x28
     CAN_ID_ID_KP_KI           = 0x29
 
     CAN_ID_BUS_VOLTAGE        = 0x30
+    CAN_ID_TORQUE_LIMIT       = 0x31
     CAN_ID_MOTOR_SPEC         = 0x40
     CAN_ID_MOTOR_FLUX_OFFSET  = 0x41
     CAN_ID_ENCODER_N_ROTATION = 0x42
@@ -147,6 +148,11 @@ class RecoilMotorController:
         frame = CANFrame(self.device_id, self.CAN_ID_MODE, 1, struct.pack("<B", mode))
         self.transport.transmitCANFrame(frame)
     
+    def saveToFlash(self, callback=None):
+        frame = CANFrame(self.device_id, self.CAN_ID_FLASH, 1, b'1')
+        self.transport.transmitReceiveCANFrame(Handler(frame, self, callback))
+        print("Saved to flash")
+
     def getPosition(self, callback=None):
         frame = CANFrame(self.device_id, self.CAN_ID_POSITION_MEASURED, 0)
         self.transport.transmitReceiveCANFrame(Handler(frame, self, callback))
@@ -170,6 +176,14 @@ class RecoilMotorController:
     def getID(self):
         frame = CANFrame(self.device_id, self.CAN_ID_CURRENTCONTROLLER_ID, 0)
         self.transport.transmitReceiveCANFrame(Handler(frame, self))
+
+    def setTargetIQ(self, iq):
+        frame = CANFrame(self.device_id, self.CAN_ID_CURRENTCONTROLLER_IQ, 4, struct.pack("<f", iq))
+        self.transport.transmitCANFrame(frame)
+        
+    def setTargetID(self, id):
+        frame = CANFrame(self.device_id, self.CAN_ID_CURRENTCONTROLLER_ID, 4, struct.pack("<f", id))
+        self.transport.transmitCANFrame(frame)
     
     def getPhaseCurrents(self):
         pass
@@ -198,15 +212,11 @@ class RecoilMotorController:
         self.transport.transmitCANFrame(frame)
     
     def getPositionParams(self):
-        frame = CANFrame(self.device_id, self.CAN_ID_POSITION_KP_KI, 0)
+        frame = CANFrame(self.device_id, self.CAN_ID_POSITION_KP_KD, 0)
         self.transport.transmitReceiveCANFrame(Handler(frame, self))
-        frame = CANFrame(self.device_id, self.CAN_ID_POSITION_KD, 0)
-        self.transport.transmitReceiveCANFrame(Handler(frame, self)) 
 
-    def setPositionParams(self, kp=1, ki=0, kd=0):
-        frame = CANFrame(self.device_id, self.CAN_ID_POSITION_KP_KI, 8, struct.pack("<ff", kp, ki))
-        self.transport.trasnmitCANFrame(frame)
-        frame = CANFrame(self.device_id, self.CAN_ID_POSITION_KD, 4, struct.pack("<f", kd))
+    def setPositionParams(self, kp, kd):
+        frame = CANFrame(self.device_id, self.CAN_ID_POSITION_KP_KD, 8, struct.pack("<ff", kp, kd))
         self.transport.transmitCANFrame(frame)
     
     def getTorque(self):
@@ -216,6 +226,14 @@ class RecoilMotorController:
     def getTargetTorque(self):
         frame = CANFrame(self.device_id, self.CAN_ID_TORQUE_TARGET, 0)
         self.transport.transmitReceiveCANFrame(Handler(frame, self))
+    
+    def getTorqueLimits(self):
+        frame = CANFrame(self.device_id, self.CAN_ID_TORQUE_LIMIT, 0)
+        self.transport.transmitReceiveCANFrame(Handler(frame, self))
+    
+    def setTorqueLimits(self, lower, upper):
+        frame = CANFrame(self.device_id, self.CAN_ID_TORQUE_LIMIT, 8, struct.pack("<ff", lower, upper))
+        self.transport.transmitCANFrame(frame)
 
     def getMotorSpecs(self):
         frame = CANFrame(self.device_id, self.CAN_ID_MOTOR_SPEC, 0)
@@ -255,6 +273,11 @@ class RecoilMotorController:
             torque_target, = struct.unpack("<f", frame.data[0:4])
             self.params.torque_target = torque_target
 
+        if frame.func_id == self.CAN_ID_TORQUE_LIMIT:
+            torque_limit_lower, torque_limit_upper = struct.unpack("<ff", frame.data)
+            self.params.torque_limit_lower = torque_limit_lower
+            self.params.torque_limit_upper = torque_limit_upper
+
         if frame.func_id == self.CAN_ID_CURRENTCONTROLLER_IQ:
             iq_target, iq_measured = struct.unpack("<ff", frame.data)
             self.params.iq_target = iq_target
@@ -282,14 +305,14 @@ class RecoilMotorController:
             self.params.current_kp = kp
             self.params.current_ki = ki
 
-        if frame.func_id == self.CAN_ID_POSITION_KP_KI:
-            kp, ki = struct.unpack("<ff", frame.data)
+        if frame.func_id == self.CAN_ID_POSITION_KP_KD:
+            kp, kd = struct.unpack("<ff", frame.data)
             self.params.position_kp = kp
-            self.params.position_ki = ki
-
-        if frame.func_id == self.CAN_ID_POSITION_KD:
-            kd, = struct.unpack("<f", frame.data[0:4])
             self.params.position_kd = kd
+
+        if frame.func_id == self.CAN_ID_POSITION_KI:
+            kd, = struct.unpack("<f", frame.data[0:4])
+            self.params.position_ki = ki
 
         if frame.func_id == self.CAN_ID_MOTOR_SPEC:
             ppairs, kv = struct.unpack("<II", frame.data)
@@ -314,17 +337,18 @@ def main():
     ser = SerialTransport("COM9", baudrate=1000000)
 
     motor_0 = RecoilMotorController(transport=ser, device_id=1)
-    # motor_1 = RecoilMotorController(transport=ser, device_id=3)
+    motor_1 = RecoilMotorController(transport=ser, device_id=2)
     print("ser start")
     ser.start()
     print("setMode to idle")
     motor_0.setMode(RecoilMotorController.MODE_IDLE)
-    # motor_1.setMode(RecoilMotorController.MODE_IDLE)
+    motor_1.setMode(RecoilMotorController.MODE_IDLE)
 
     time.sleep(0.5)
 
     # motor_0.setMode(RecoilMotorController.MODE_POSITION)
     # motor_1.setMode(RecoilMotorController.MODE_POSITION)
+    
     # motor_0.ping()
     # motor_1.ping()
 
@@ -334,7 +358,7 @@ def main():
         t = time.time()
 
         
-        # motor_0.getMode()
+        motor_0.getMode()
         # motor_1.getMode()
         
         
@@ -345,32 +369,34 @@ def main():
         
 
         
-        # motor_0.getPosition()
-        # motor_1.getPosition()
-        # motor_0.getTargetPosition()
-        # motor_1.getTargetPosition()
-        # motor_0.setTargetPosition(4*math.sin(2*time.time()))
-        # motor_1.setTargetPosition(2*math.sin(time.time()))
-        # motor_0.setTargetPosition(0)
-        # motor_1.setTargetPosition(0)
+        motor_0.getPosition()
+        motor_1.getPosition()
+        motor_0.getTargetPosition()
+        motor_1.getTargetPosition()
+        # motor_0.setTarget(4*math.sin(2*time.time()))
+        # motor_1.setTarget(2*math.sin(time.time()))
+        # motor_0.setTarget(0)
+        # motor_1.setTarget(0)
         # print("GetIQ")
         # motor_0.getIQ()
-
-        motor_0.getMotorSpecs()
-        motor_0.getCurrentParams()
-        motor_0.getPositionParams()
+        
+        # motor_0.getMotorSpecs()
+        # motor_0.getCurrentParams()
+        # motor_0.getPositionParams()
         # print(motor_0.mode, motor_1.mode,
         #       motor_0.motor_position_target, motor_1.motor_position_target,
         #       motor_0.motor_position_measured, motor_1.motor_position_measured)
-        # print(motor_0.motor.velocity_measured, motor_1.motor.velocity_measured)
-        # print(motor_0.mode, motor_0.motor_position_measured, motor_0.motor_position_target)
-        # print(motor_0.motor_position_measured, motor_1.motor_position_measured)
+        # print(motor_0.params.velocity_measured, motor_1.params.velocity_measured)
+        # print(motor_0.mode, motor_0.params.position_measured, motor_0.params.position_target)
+        print(motor_0.params.position_measured, motor_1.params.position_measured)
+
         # print(motor_0.motor_iq_measured, motor_0.motor_iq_target, motor_0.motor_position_measured)
         # print(motor_0.motor_pole_pairs, motor_0.motor_kv)
         # print(motor_0.motor.current_kp, motor_0.motor.current_ki)
-        print(motor_0.motor.position_kp, motor_0.motor.position_ki, motor_0.motor.position_kd)
+        # print(motor_0.motor.position_kp, motor_0.motor.position_ki, motor_0.motor.position_kd)
+
         motor_0.feed()
-        # motor_1.feed()
+        motor_1.feed()
 
         time.sleep(0.01)
         

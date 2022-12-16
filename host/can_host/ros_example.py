@@ -8,6 +8,37 @@ import serial
 import motor
 # from dotxboxcontroller import XboxController, Hand
 
+import rospy
+from std_msgs.msg import Float32MutlipleArray
+
+class CANROS:
+    def __init__(self):
+        # get desired motor position, velocity, torque for motor PID control for the 12 A1 motors (+ 3 tail motors?)
+        rospy.subscriber('MotorCmd', Float32MutlipleArray, self.__des_motor_cb, queue_size=1) 
+
+        # get measured motor position, velocity, torque for motor PID control for the 12 A1 motors
+        rospy.subscriber('MotorState', Float32MutlipleArray, self.__mea_motor_cb, queue_size=1)
+
+        self.__measured_motor_pub = rospy.publisher('measured_motor_info', Float32MutlipleArray, queue_size=1) 
+        rospy.Time.timer('comm_can', 1/2000, self.__can_comm_cb) # timer 
+
+    def __des_motor_cb(self, msg):
+        # split MotorCmd to motor position, velocity, and torque
+        # save data at tail indexes to a variable -> send tail command via CAN to tail motors + receive tail feedback 
+        self.__desired_motor_position = msg.data  
+
+    def __mea_motor_cb(self, msg):
+        # get measured motor state for the 12 A1 motors -> save to variable
+        pass
+    
+    def __can_comm_cb(self, event):
+        # send tail motor command to tail motors via CAN + get tail feedback
+        # append tail feedback to motor state variable from __mea_motor_cb
+        self.__updated_motor_msg = None 
+        self.__measured_motor_pub.publish(pack_as_msg(self.__updated_motor_msg))
+        
+
+
 # device_id 4 bits
 # func_id   7 bits
 
@@ -106,7 +137,10 @@ class RecoilMotorController:
     CAN_ID_ID_KP_KI           = 0x29
 
     CAN_ID_BUS_VOLTAGE        = 0x30
-    CAN_ID_TORQUE_LIMIT       = 0x31
+    CAN_ID_POSITION_LIMIT     = 0x31
+    CAN_ID_VELOCITY_LIMIT     = 0x32
+    CAN_ID_TORQUE_LIMIT       = 0x33
+
     CAN_ID_MOTOR_SPEC         = 0x40
     CAN_ID_MOTOR_FLUX_OFFSET  = 0x41
     CAN_ID_ENCODER_N_ROTATION = 0x42
@@ -136,10 +170,41 @@ class RecoilMotorController:
     def __init__(self, transport, device_id):
         self.transport = transport
         self.device_id = device_id 
-        self.params = motor.MotorParams()
-
+        self.params= motor.MotorParams.params # TODO: init all params
         self.mode = self.MODE_DISABLED
 
+    def accessCAN(self, can_id, params=b""):
+        '''
+            Generic getter / setter via CAN
+            Example: Set motor torque target to 3.0 [Nm]
+                accessCAN(CAN_ID_TORQUE_TARGET, {operation: 'set', type: 'f', torque: 3.0})
+            
+            [TODO]
+            - Guess type from CAN_ID
+        '''
+        operation = params.pop('operation', 'get')
+        can_id = params.pop('can_id', self.CAN_ID_PING)
+
+        try:
+            type = params.pop('type')
+        except KeyError:
+            return
+        
+        data_length = len(params)
+        data = struct.pack("<"+type, *params.items())
+
+        frame = CANFrame(self.device_id, can_id, data_length, data)
+
+        if operation == 'set':
+            self.transport.transmitCANFrame(frame)
+        else:
+            self.transport.transmitReceiveCANFrame(Handler(frame, self))
+    
+    def saveToFlash(self, callback=None):
+        frame = CANFrame(self.device_id, self.CAN_ID_FLASH, 1, b'1')
+        self.transport.transmitReceiveCANFrame(Handler(frame, self, callback))
+        print("Saved to flash")
+    
     def getMode(self, callback=None):
         frame = CANFrame(self.device_id, self.CAN_ID_MODE, 0)
         self.transport.transmitReceiveCANFrame(Handler(frame, self, callback))
@@ -147,11 +212,6 @@ class RecoilMotorController:
     def setMode(self, mode):
         frame = CANFrame(self.device_id, self.CAN_ID_MODE, 1, struct.pack("<B", mode))
         self.transport.transmitCANFrame(frame)
-    
-    def saveToFlash(self, callback=None):
-        frame = CANFrame(self.device_id, self.CAN_ID_FLASH, 1, b'1')
-        self.transport.transmitReceiveCANFrame(Handler(frame, self, callback))
-        print("Saved to flash")
 
     def getPosition(self, callback=None):
         frame = CANFrame(self.device_id, self.CAN_ID_POSITION_MEASURED, 0)
@@ -168,6 +228,22 @@ class RecoilMotorController:
     def getVelocity(self, callback=None):
         frame = CANFrame(self.device_id, self.CAN_ID_VELOCITY_MEASURED, 0)
         self.transport.transmitReceiveCANFrame(Handler(frame, self, callback))
+
+    def getTargetVelocity(self, callback=None):
+        frame = CANFrame(self.device_id, self.CAN_ID_VELOCITY_TARGET, 0)
+        self.transport.transmitReceiveCANFrame(Handler(frame, self, callback))
+
+    def setTargetVelocity(self, velocity):
+        frame = CANFrame(self.device_id, self.CAN_ID_VELOCITY_TARGET, 4, struct.pack("<f", velocity))
+        self.transport.transmitCANFrame(frame)
+
+    def getTargetTorque(self, callback=None):
+        frame = CANFrame(self.device_id, self.CAN_ID_TORQUE_TARGET, 0)
+        self.transport.transmitReceiveCANFrame(Handler(frame, self, callback))
+
+    def setTargetTorque(self, torque):
+        frame = CANFrame(self.device_id, self.CAN_ID_TORQUE_TARGET, 4, struct.pack("<f", torque))
+        self.transport.transmitCANFrame(frame)
         
     def getIQ(self):
         frame = CANFrame(self.device_id, self.CAN_ID_CURRENTCONTROLLER_IQ, 0)
@@ -207,16 +283,18 @@ class RecoilMotorController:
         frame = CANFrame(self.device_id, self.CAN_ID_IQ_KP_KI, 0)
         self.transport.transmitReceiveCANFrame(Handler(frame, self))
     
-    def setCurrentParams(self, kp, ki):
-        frame = CANFrame(self.device_id, self.CAN_ID_IQ_KP_KI, 8, struct.pack("<ff", kp, ki))
+    def setCurrentParams(self, current_kp, current_ki):
+        frame = CANFrame(self.device_id, self.CAN_ID_IQ_KP_KI, 8, struct.pack("<ff", current_kp, current_ki))
         self.transport.transmitCANFrame(frame)
     
     def getPositionParams(self):
         frame = CANFrame(self.device_id, self.CAN_ID_POSITION_KP_KD, 0)
         self.transport.transmitReceiveCANFrame(Handler(frame, self))
+        frame = CANFrame(self.device_id, self.CAN_ID_POSITION_KI, 0)
+        self.transport.transmitReceiveCANFrame(Handler(frame, self))
 
-    def setPositionParams(self, kp, kd):
-        frame = CANFrame(self.device_id, self.CAN_ID_POSITION_KP_KD, 8, struct.pack("<ff", kp, kd))
+    def setPositionParams(self, position_kp, position_kd):
+        frame = CANFrame(self.device_id, self.CAN_ID_POSITION_KP_KD, 8, struct.pack("<ff", position_kp, position_kd))
         self.transport.transmitCANFrame(frame)
     
     def getTorque(self):
@@ -227,12 +305,28 @@ class RecoilMotorController:
         frame = CANFrame(self.device_id, self.CAN_ID_TORQUE_TARGET, 0)
         self.transport.transmitReceiveCANFrame(Handler(frame, self))
     
+    def getPositionLimits(self):
+        frame = CANFrame(self.device_id, self.CAN_ID_POSITION_LIMIT, 0)
+        self.transport.transmitReceiveCANFrame(Handler(frame, self))
+
+    def setPositionLimits(self, position_limit_lower, position_limit_upper):
+        frame = CANFrame(self.device_id, self.CAN_ID_POSITION_LIMIT, 8, struct.pack("<ff", position_limit_lower, position_limit_upper))
+        self.transport.transmitCANFrame(frame)
+    
+    def getVelocityLimits(self):
+        frame = CANFrame(self.device_id, self.CAN_ID_VELOCITY_LIMIT, 0)
+        self.transport.transmitReceiveCANFrame(Handler(frame, self))
+
+    def setVelocityLimits(self, velocity_limit_lower, velocity_limit_upper):
+        frame = CANFrame(self.device_id, self.CAN_ID_VELOCITY_LIMIT, 8, struct.pack("<ff", velocity_limit_lower, velocity_limit_upper))
+        self.transport.transmitCANFrame(frame)
+    
     def getTorqueLimits(self):
         frame = CANFrame(self.device_id, self.CAN_ID_TORQUE_LIMIT, 0)
         self.transport.transmitReceiveCANFrame(Handler(frame, self))
     
-    def setTorqueLimits(self, lower, upper):
-        frame = CANFrame(self.device_id, self.CAN_ID_TORQUE_LIMIT, 8, struct.pack("<ff", lower, upper))
+    def setTorqueLimits(self, torque_limit_lower, torque_limit_upper):
+        frame = CANFrame(self.device_id, self.CAN_ID_TORQUE_LIMIT, 8, struct.pack("<ff", torque_limit_lower, torque_limit_upper))
         self.transport.transmitCANFrame(frame)
 
     def getMotorSpecs(self):
@@ -254,77 +348,89 @@ class RecoilMotorController:
         
         if frame.func_id == self.CAN_ID_POSITION_MEASURED:
             position_measured, = struct.unpack("<f", frame.data[0:4])
-            self.params.position_measured = position_measured
+            self.params["position_measured"] = position_measured
 
         if frame.func_id == self.CAN_ID_POSITION_TARGET:
             position_target, = struct.unpack("<f", frame.data[0:4])
-            self.params.position_target = position_target
+            self.params["position_target"] = position_target
 
         if frame.func_id == self.CAN_ID_VELOCITY_MEASURED:
             velocity_measured, = struct.unpack("<f", frame.data[0:4])
-            # print(velocity_measured)
-            self.params.velocity_measured = velocity_measured    
+            self.params["velocity_measured"] = velocity_measured   
+            
+        if frame.func_id == self.CAN_ID_VELOCITY_TARGET:
+            velocity_target, = struct.unpack("<f", frame.data[0:4])
+            self.params["velocity_target"] = velocity_target
 
         if frame.func_id == self.CAN_ID_TORQUE_MEASURED:
             torque_measured, = struct.unpack("<f", frame.data[0:4])
-            self.params.torque_measured = torque_measured
+            self.params["torque_measured"] = torque_measured
         
         if frame.func_id == self.CAN_ID_TORQUE_TARGET:
             torque_target, = struct.unpack("<f", frame.data[0:4])
-            self.params.torque_target = torque_target
+            self.params["torque_target"] = torque_target
+
+        if frame.func_id == self.CAN_ID_POSITION_LIMIT:
+            position_limit_lower, position_limit_upper = struct.unpack("<ff", frame.data)
+            self.params["position_limit_lower"] = position_limit_lower
+            self.params["position_limit_upper"] = position_limit_upper
+
+        if frame.func_id == self.CAN_ID_VELOCITY_LIMIT:
+            velocity_limit_lower, velocity_limit_upper = struct.unpack("<ff", frame.data)
+            self.params["velocity_limit_lower"] = velocity_limit_lower
+            self.params["velocity_limit_upper"] = velocity_limit_upper
 
         if frame.func_id == self.CAN_ID_TORQUE_LIMIT:
             torque_limit_lower, torque_limit_upper = struct.unpack("<ff", frame.data)
-            self.params.torque_limit_lower = torque_limit_lower
-            self.params.torque_limit_upper = torque_limit_upper
+            self.params["torque_limit_lower"] = torque_limit_lower
+            self.params["torque_limit_upper"] = torque_limit_upper
 
         if frame.func_id == self.CAN_ID_CURRENTCONTROLLER_IQ:
             iq_target, iq_measured = struct.unpack("<ff", frame.data)
-            self.params.iq_target = iq_target
-            self.params.iq_measured = iq_measured
+            self.params["iq_target"] = iq_target
+            self.params["iq_measured"] = iq_measured
 
         if frame.func_id == self.CAN_ID_CURRENTCONTROLLER_ID:
             id_target, id_measured = struct.unpack("<ff", frame.data)
-            self.params.id_target = id_target
-            self.params.id_measured = id_measured
+            self.params["id_target"] = id_target
+            self.params["id_measured"] = id_measured
 
         if frame.func_id == self.CAN_ID_CURRENTCONTROLLER_VQ:
             vq_target, = struct.unpack("<f", frame.data[0:4])
-            self.params.vq_target = vq_target
+            self.params["vq_target"] = vq_target
 
         if frame.func_id == self.CAN_ID_CURRENTCONTROLLER_VD:
             vd_target, = struct.unpack("<f", frame.data[0:4])
-            self.params.vd_target = vd_target
+            self.params["vd_target"] = vd_target
 
         if frame.func_id == self.CAN_ID_BUS_VOLTAGE:
             v_bus, = struct.unpack("<f", frame.data[0:4])
-            self.params.v_bus = v_bus
+            self.params["v_bus"] = v_bus
 
         if frame.func_id == self.CAN_ID_IQ_KP_KI:
             kp, ki = struct.unpack("<ff", frame.data)
-            self.params.current_kp = kp
-            self.params.current_ki = ki
+            self.params["current_kp"] = kp
+            self.params["current_ki"] = ki
 
         if frame.func_id == self.CAN_ID_POSITION_KP_KD:
             kp, kd = struct.unpack("<ff", frame.data)
-            self.params.position_kp = kp
-            self.params.position_kd = kd
+            self.params["position_kp"] = kp
+            self.params["position_kd"] = kd
 
         if frame.func_id == self.CAN_ID_POSITION_KI:
-            kd, = struct.unpack("<f", frame.data[0:4])
-            self.params.position_ki = ki
+            ki, = struct.unpack("<f", frame.data[0:4])
+            self.params["position_ki"] = ki
 
         if frame.func_id == self.CAN_ID_MOTOR_SPEC:
             ppairs, kv = struct.unpack("<II", frame.data)
-            self.params.pole_pairs = ppairs
-            self.params.kv = kv
+            self.params["pole_pairs"] = ppairs
+            self.params["kv"] = kv
 
         if frame.func_id == self.CAN_ID_PING:
             # print(self.device_id, frame.data[0])
             pass
             
 # stick = XboxController(0)
-
 
 def ping_interrupt_handler(device, frame):
     print(device.device_id, frame.device_id)
@@ -386,9 +492,9 @@ def main():
         # print(motor_0.mode, motor_1.mode,
         #       motor_0.motor_position_target, motor_1.motor_position_target,
         #       motor_0.motor_position_measured, motor_1.motor_position_measured)
-        # print(motor_0.params.velocity_measured, motor_1.params.velocity_measured)
-        # print(motor_0.mode, motor_0.params.position_measured, motor_0.params.position_target)
-        print(motor_0.params.position_measured, motor_1.params.position_measured)
+        # print(motor_0.params["velocity_measured"], motor_1.params["velocity_measured"])
+        # print(motor_0.mode, motor_0.params["position_measured"], motor_0.params["position_target"])
+        print(motor_0.params["position_measured"], motor_1.params["position_measured"])
 
         # print(motor_0.motor_iq_measured, motor_0.motor_iq_target, motor_0.motor_position_measured)
         # print(motor_0.motor_pole_pairs, motor_0.motor_kv)

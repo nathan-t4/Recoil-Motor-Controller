@@ -215,9 +215,8 @@ void handleHostCommand() {
 void APP_init() {
   MotorController_init(&controller);
 
-  controller.position_controller.position_kp = 0.3;
-  controller.position_controller.torque_limit_lower = -5;
-  controller.position_controller.torque_limit_upper = 5;
+   controller.position_controller.torque_limit_lower = -5;
+   controller.position_controller.torque_limit_upper = 5;
 
   {
     char str[128];
@@ -245,7 +244,7 @@ void APP_main() {
 //    MotorController_setMode(&controller, MODE_DISABLED);
   }
 
-  handleHostCommand();
+//  handleHostCommand();
 
 //  char str[128];
 //  sprintf(str, "pos:%f\tpos_t:%f\tpos_s:%f\tv:%f\r\n",

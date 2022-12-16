@@ -18,6 +18,7 @@ void Encoder_init(Encoder *encoder, I2C_HandleTypeDef *hi2c, TIM_HandleTypeDef *
   encoder->direction = -1;
   encoder->velocity_filter_alpha = 0.02;
   encoder->position_offset = 0;
+  encoder->dt = 0.1;
 
   encoder->n_rotations = 0;
 
@@ -38,7 +39,7 @@ void Encoder_triggerUpdate(Encoder *encoder) {
 }
 
 void Encoder_update(Encoder *encoder) {
-  float dt = (float)__HAL_TIM_GET_COUNTER(encoder->htim) / 100000.;
+  encoder->dt = (float)__HAL_TIM_GET_COUNTER(encoder->htim) / 100000.;
 //
 //  float dt = 1/4000.;
 
@@ -57,7 +58,9 @@ void Encoder_update(Encoder *encoder) {
   encoder->position_relative = position_relative;
   encoder->position_raw = encoder->position_relative + (encoder->n_rotations * (2*M_PI));
   encoder->position = encoder->position_raw;
-  encoder->velocity = (encoder->velocity_filter_alpha * delta_position / dt) + ((1 - encoder->velocity_filter_alpha) * encoder->velocity);
+  if (encoder->dt > 0) {
+	  encoder->velocity = (encoder->velocity_filter_alpha * delta_position / encoder->dt) + ((1 - encoder->velocity_filter_alpha) * encoder->velocity);
+  }
 }
 
 float Encoder_getRelativePosition(Encoder *encoder) {

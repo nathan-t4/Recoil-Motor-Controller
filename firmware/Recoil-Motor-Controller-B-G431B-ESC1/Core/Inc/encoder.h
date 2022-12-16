@@ -24,6 +24,7 @@ typedef struct {
   uint32_t cpr;
   float position_offset;      // in range (-inf, inf)
   float velocity_filter_alpha;
+  float dt;
 
   int32_t n_rotations;
   float position_relative;    // in range [0, 2PI)

@@ -23,6 +23,8 @@ typedef struct {
   float i_d_kp;
   float i_d_ki;
 
+  float integrator_lim;
+
   // variables
   float i_a_measured;
   float i_b_measured;

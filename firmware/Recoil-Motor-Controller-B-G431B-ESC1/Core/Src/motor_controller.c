@@ -325,14 +325,14 @@ void MotorController_updatePositionReading(MotorController *controller) {
 
   controller->position_controller.position_measured = Encoder_getPosition(&controller->encoder);
   controller->position_controller.velocity_measured = Encoder_getVelocity(&controller->encoder);
-  controller->position_controller.torque_measured = (8.3 * controller->current_controller.i_q_measured) / (float)controller->motor.kv_rating;
+  controller->position_controller.torque_measured = controller->motor.kt_rating * controller->current_controller.i_q_measured; // before gear ratio
 }
 
 void MotorController_updatePositionController(MotorController *controller) {
-  PositionController_update(&controller->position_controller);
+  PositionController_update(&controller->position_controller, controller->mode);
 
   if (controller->mode != MODE_OPEN_IDQ) {
-    controller->current_controller.i_q_target = (controller->position_controller.torque_setpoint * (float)controller->motor.kv_rating) / 8.3;
+    controller->current_controller.i_q_target = controller->position_controller.torque_setpoint / controller->motor.kt_rating; // before gear ratio
     controller->current_controller.i_d_target = 0;
   }
 }
@@ -461,6 +461,35 @@ void MotorController_handleCANMessage(MotorController *controller, CAN_Frame *rx
   tx_frame.size = 8;
 
   switch (func_id) {
+    case CAN_ID_GENERAL:
+      if (is_get_request) {
+        tx_frame.size = 5;
+        // 16-bit position, 12-bit velocity, 12-bit torque [little endian]
+        int position = float_to_uint(MotorController_getPosition(controller), controller->position_controller.position_limit_lower, controller->position_controller.position_limit_upper, 16);
+        int velocity = float_to_uint(MotorController_getVelocity(controller), controller->position_controller.velocity_limit_lower, controller->position_controller.velocity_limit_upper, 12);
+        int torque = float_to_uint(MotorController_getTorque(controller), controller->position_controller.torque_limit_lower, controller->position_controller.torque_limit_upper, 12);
+        tx_frame.data[0] = position&0xFF;
+        tx_frame.data[1] = position>>8;
+        tx_frame.data[2] = velocity&0xFF;
+        tx_frame.data[3] = ((velocity>>4)&0xF0)|(torque&0xF);
+        tx_frame.data[4] = (torque>>4)&0xFF;
+        break;
+      }
+      else {
+        // 16-bit position, 12-bit velocity, 12-bit torque, 12-bit position_kp, 12-bit position_kd, 12-bit feedforward torque [little endian]
+       int position = (*(rx_frame->data + 1)<<8)|(*(rx_frame->data));
+       int velocity = (*(rx_frame->data + 3)<<4)|(*(rx_frame->data + 2)>>4);
+       int position_kp = ((*(rx_frame->data + 4)&0xF)<<8)|(*(rx_frame->data + 3));
+       int position_kd = (*(rx_frame->data + 6)<<4)|(*(rx_frame->data + 5)>>4);
+       int torque = ((*(rx_frame->data + 7)&0xF)<<8)|(*(rx_frame->data + 6));
+
+       controller->position_controller.position_target = uint_to_float(position, controller->position_controller.position_limit_lower, controller->position_controller.position_limit_upper, 16);
+       controller->position_controller.velocity_target = uint_to_float(velocity, controller->position_controller.velocity_limit_lower, controller->position_controller.velocity_limit_upper, 12);
+       controller->position_controller.position_kp = uint_to_float(position_kp, 0, 5, 12);
+       controller->position_controller.position_kd = uint_to_float(position_kd, 0, 1, 12);
+       controller->position_controller.torque_target = uint_to_float(torque, controller->position_controller.torque_limit_lower, controller->position_controller.torque_limit_upper, 12);
+      }
+    
     case CAN_ID_ESTOP:  // 0x00
       MotorController_setMode(controller, MODE_DISABLED);
       tx_frame.size = 1;
@@ -499,20 +528,28 @@ void MotorController_handleCANMessage(MotorController *controller, CAN_Frame *rx
       else {
         MotorController_loadConfig(controller);
       }
-
-    case CAN_ID_TORQUE_MEASURED:  // 0x13
-      tx_frame.size = 4;
-      *((float *)tx_frame.data) = MotorController_getTorque(controller);
-      break;
-    case CAN_ID_TORQUE_TARGET:  // 0x13
-      if (is_get_request) {
-        tx_frame.size = 4;
-        *((float *)tx_frame.data) = controller->position_controller.torque_target;
-      }
-      else {
-        controller->position_controller.torque_target = *((float *)rx_frame->data);
-      }
-      break;
+    case CAN_ID_POSITION_LIMIT:
+    	if (is_get_request) {
+    		tx_frame.size = 8;
+    		*((float *)tx_frame.data) = controller->position_controller.position_limit_lower;
+    		*((float *)tx_frame.data + 1) = controller->position_controller.position_limit_upper;
+    	}
+    	else {
+    		controller->position_controller.position_limit_lower = *((float *)rx_frame->data);
+    		controller->position_controller.position_limit_upper = *((float *)rx_frame->data + 1);
+    	}
+    	break;
+    case CAN_ID_VELOCITY_LIMIT:
+    	if (is_get_request) {
+    		tx_frame.size = 8;
+    		*((float *)tx_frame.data) = controller->position_controller.velocity_limit_lower;
+    		*((float *)tx_frame.data + 1) = controller->position_controller.velocity_limit_upper;
+    	}
+    	else {
+    		controller->position_controller.velocity_limit_lower = *((float *)rx_frame->data);
+    		controller->position_controller.velocity_limit_upper = *((float *)rx_frame->data + 1);
+    	}
+    	break;
     case CAN_ID_TORQUE_LIMIT:
     	if (is_get_request) {
     		tx_frame.size = 8;
@@ -541,7 +578,28 @@ void MotorController_handleCANMessage(MotorController *controller, CAN_Frame *rx
       tx_frame.size = 4;
       *((float *)tx_frame.data) = MotorController_getVelocity(controller);
       break;
-
+    case CAN_ID_VELOCITY_TARGET:  // 0x13
+          if (is_get_request) {
+            tx_frame.size = 4;
+            *((float *)tx_frame.data) = controller->position_controller.velocity_target;
+          }
+          else {
+        	controller->position_controller.velocity_target = *((float *)rx_frame->data);
+          }
+          break;
+    case CAN_ID_TORQUE_MEASURED:  // 0x13
+      tx_frame.size = 4;
+      *((float *)tx_frame.data) = MotorController_getTorque(controller);
+      break;
+    case CAN_ID_TORQUE_TARGET:  // 0x13
+      if (is_get_request) {
+        tx_frame.size = 4;
+        *((float *)tx_frame.data) = controller->position_controller.torque_target;
+      }
+      else {
+    	controller->position_controller.torque_target = *((float *)rx_frame->data);
+      }
+      break;
     case CAN_ID_POSITION_KP_KD:  // 0x20
       if (is_get_request) {
 		 tx_frame.size = 8;
@@ -646,7 +704,6 @@ void MotorController_handleCANMessage(MotorController *controller, CAN_Frame *rx
         controller->current_controller.v_d_target = *((float *)rx_frame->data);
       }
       break;
-
     case CAN_ID_PING:  // 0x7F
       tx_frame.size = 4;
       *((uint8_t *)tx_frame.data) = controller->device_id;

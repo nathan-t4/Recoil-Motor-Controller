@@ -12,7 +12,7 @@ import gui_panels
 FPS = 10
 
 display_mode = "GENERAL"
-device_id = 4
+device_id = 2
 
 class Plot(ttk.Frame):
     def __init__(self, parent, traces, name="plot", x_pkpk=[0, 100], y_pkpk=[-1, 1]):
@@ -155,7 +155,7 @@ plot_velocity = Plot(panel_general,
                     "color": "#FFFF00",
                 }],
             name="Velocity",
-            y_pkpk=[-10, 10])
+            y_pkpk=[-100, 100])
 plot_velocity.grid(column=0, row=1)
 plot_torque = Plot(panel_general,
             traces=[
@@ -245,26 +245,27 @@ def receivePacket():
     esc.motor.getMode()
     esc.motor.getCurrentParams()
     esc.motor.getPositionParams()
-    # print(f"Kp: {esc.motor.params.current_kp}, Ki: {esc.motor.params.current_ki}")
+    esc.motor.getGeneral()
+    # print(f"Kp: {esc.motor.params['current_kp'] Ki: {esc.motor.params['current_ki']}"")
 
     esc.setTarget()
 
-    # print(esc.motor.params.position_measured, esc.motor.params.position_target)
-    # print(esc.motor.params.iq_measured, esc.motor.params.iq_target)
+    # print(esc.motor.params['position_measured'], esc.motor.params['position_target'])
+    # print(esc.motor.params['velocity_measured'], esc.motor.params['velocity_target'])
+    # print(esc.motor.params['iq_measured,'] esc.motor.params['iq_target'])
     if display_mode == "GENERAL":
-        esc.updatePosition()
-        esc.updateVelocity()
-        esc.updateTorque()
+        esc.updateGeneral()
         plot_position.updateData({
-            "position_measured": esc.motor.params.position_measured,
-            "position_setpoint": esc.motor.params.position_target,
+            "position_measured": esc.motor.params['position_measured'],
+            "position_setpoint": esc.motor.params['position_target'],
             })
         plot_velocity.updateData({
-            "velocity_measured": esc.motor.params.velocity_measured,
+            "velocity_measured": esc.motor.params['velocity_measured'],
+            "velocity_setpoint": esc.motor.params['velocity_target']
             })
         plot_torque.updateData({
-            "torque_measured": esc.motor.params.torque_measured,
-            "torque_setpoint": esc.motor.params.torque_target,
+            "torque_measured": esc.motor.params['torque_measured'],
+            "torque_setpoint": esc.motor.params['torque_target'],
             })
     
     elif display_mode == "CURRENT":
@@ -279,14 +280,14 @@ def receivePacket():
             "i_beta": 0
             })
         plot_q_current.updateData({
-            "i_q_target": esc.motor.params.iq_target,
-            "i_q_measured": esc.motor.params.iq_measured
+            "i_q_target": esc.motor.params['iq_target'],
+            "i_q_measured": esc.motor.params['iq_measured']
             })
     
     elif display_mode == "VOLTAGE":
         esc.updateVoltage()
         plot_bus_voltage.updateData({
-            "v_bus": esc.motor.params.v_bus
+            "v_bus": esc.motor.params['v_bus']
             })
         plot_phase_voltage.updateData({
             "v_a": 0,

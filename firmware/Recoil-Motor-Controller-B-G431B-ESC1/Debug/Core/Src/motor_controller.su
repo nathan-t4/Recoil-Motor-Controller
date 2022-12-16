@@ -11,8 +11,8 @@
 ../Core/Src/motor_controller.c:270:7:MotorController_getPosition	16	static
 ../Core/Src/motor_controller.c:274:6:MotorController_updateCommutation	32	static
 ../Core/Src/motor_controller.c:298:6:MotorController_triggerPositionUpdate	16	static
-../Core/Src/motor_controller.c:321:6:MotorController_updatePositionReading	24	static
+../Core/Src/motor_controller.c:321:6:MotorController_updatePositionReading	16	static
 ../Core/Src/motor_controller.c:331:6:MotorController_updatePositionController	16	static
 ../Core/Src/motor_controller.c:340:6:MotorController_updateService	16	static
 ../Core/Src/motor_controller.c:347:6:MotorController_runCalibrationSequence	200	static
-../Core/Src/motor_controller.c:447:6:MotorController_handleCANMessage	48	static
+../Core/Src/motor_controller.c:447:6:MotorController_handleCANMessage	80	static

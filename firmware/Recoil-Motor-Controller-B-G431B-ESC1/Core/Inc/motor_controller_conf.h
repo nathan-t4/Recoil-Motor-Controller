@@ -8,9 +8,9 @@
 #ifndef INC_MOTOR_CONTROLLER_CONF_H_
 #define INC_MOTOR_CONTROLLER_CONF_H_
 
-#define FIRMWARE_VERSION                0x00100003    // (MAJOR [7:5]) . (MINOR [4:2]) . (PATCH [1:0])
+#define FIRMWARE_VERSION                0x00100004    // (MAJOR [7:5]) . (MINOR [4:2]) . (PATCH [1:0])
 
-#define DEVICE_CAN_ID                   4
+#define DEVICE_CAN_ID                   2
 
 #define OVERWRITE_CONFIG                0
 
@@ -31,7 +31,7 @@ typedef enum {
   CAN_ID_ID                 = 0x01U,
   CAN_ID_VERSION            = 0x02U,
   CAN_ID_HEARTBEAT          = 0x04U,
-
+  CAN_ID_GENERAL            = 0x05U,
   // controller
   CAN_ID_MODE               = 0x10U,
   CAN_ID_FLASH              = 0x11U,
@@ -48,7 +48,9 @@ typedef enum {
   CAN_ID_ID_KP_KI           = 0x29U,
 
   CAN_ID_BUS_VOLTAGE        = 0x30U,
-  CAN_ID_TORQUE_LIMIT       = 0x31U,
+  CAN_ID_POSITION_LIMIT     = 0x31U,
+  CAN_ID_VELOCITY_LIMIT		  = 0x32U,
+  CAN_ID_TORQUE_LIMIT 		  = 0x33U,
 
   CAN_ID_MOTOR_SPEC         = 0x40U,
   CAN_ID_MOTOR_FLUX_OFFSET  = 0x41U,
@@ -61,6 +63,7 @@ typedef enum {
   CAN_ID_CURRENTCONTROLLER_ID = 0x51U,    // [i_d_target, i_d_measured]
   CAN_ID_CURRENTCONTROLLER_VQ = 0x52U,    // [v_q_target]
   CAN_ID_CURRENTCONTROLLER_VD = 0x53U,    // [v_d_target]
+  CAN_ID_CURRENTCONTROLLER_ID_IQ_INTEGRATOR = 0x54U,
 
   CAN_ID_PING               = 0x7FU
 } CAN_ID_Types;

@@ -9,7 +9,7 @@
 #define INC_POSITION_CONTROLLER_H_
 
 #include <stdint.h>
-
+#include "motor_controller_conf.h"
 #include "foc_math.h"
 
 typedef struct {
@@ -41,6 +41,6 @@ typedef struct {
 
 void PositionController_init(PositionController *controller);
 
-void PositionController_update(PositionController *controller);
+void PositionController_update(PositionController *controller, Mode mode);
 
 #endif /* INC_POSITION_CONTROLLER_H_ */

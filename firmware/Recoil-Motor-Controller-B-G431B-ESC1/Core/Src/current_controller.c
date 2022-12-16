@@ -4,11 +4,13 @@
 void CurrentController_init(CurrentController *controller) {
   controller->current_filter_alpha = 0.5;
 
-  controller->i_q_kp = 1.;
-  controller->i_q_ki = 0.; // 0.01
+  controller->i_q_kp = 1.5;
+  controller->i_q_ki = 0.0004; // 0.01
 
-  controller->i_d_kp = 1.;
-  controller->i_d_ki = 0.;
+  controller->i_d_kp = 1.5;
+  controller->i_d_ki = 0.0004;
+
+//  controller->integrator_lim = 12. / controller->i_q_ki; // v_bus / ki
 }
 
 void CurrentController_update(CurrentController *controller, Mode mode, float sin_theta, float cos_theta, float v_bus) {

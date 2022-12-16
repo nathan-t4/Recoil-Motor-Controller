@@ -13,6 +13,7 @@
 typedef struct {
   uint32_t pole_pairs;
   uint32_t kv_rating;
+  float kt_rating;
   float flux_angle_offset;
 } Motor;
 

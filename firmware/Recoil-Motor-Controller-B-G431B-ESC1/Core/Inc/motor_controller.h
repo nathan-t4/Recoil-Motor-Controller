@@ -8,6 +8,8 @@
 #ifndef INC_MOTOR_CONTROLLER_H_
 #define INC_MOTOR_CONTROLLER_H_
 
+#include <string.h>
+
 #include "stm32g4xx_hal.h"
 
 #include "can.h"
@@ -17,6 +19,7 @@
 #include "motor.h"
 #include "current_controller.h"
 #include "position_controller.h"
+#include "math_ops.h"
 
 typedef struct {
   Encoder             encoder;
